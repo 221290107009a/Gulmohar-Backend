@@ -1,0 +1,9 @@
+{
+    "name": "MembershipFee",
+    "alias": "membershipfee",
+    "description": "The FleetCart MembershipFee Module.",
+    "priority": 130,
+    "providers": [
+        "Modules\\MembershipFee\\Providers\\MembershipFeeServiceProvider"
+    ]
+}

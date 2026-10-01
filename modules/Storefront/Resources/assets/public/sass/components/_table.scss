@@ -1,0 +1,40 @@
+.table-bordered {
+	td {
+		border-color: $color-gray-lite;
+	}
+}
+
+.table {
+	thead {
+		th {
+			border-bottom: 1px solid $color-gray-lite;
+		}
+	}
+
+    tbody {
+        tr {
+            &:first-child {
+                td {
+                    padding-top: 25px;
+                }
+            }
+
+            &:last-child {
+                td {
+                    padding-bottom: 20px;
+                }
+            }
+        }
+    }
+
+	th {
+        font-weight: 500;
+        padding: 12px 25px;
+		border-top: none;
+	}
+
+	td {
+        padding: 15px 25px;
+		border-color: $color-gray-lite;
+	}
+}

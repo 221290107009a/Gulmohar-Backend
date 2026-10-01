@@ -1,0 +1,9 @@
+{
+    "name": "Seller",
+    "alias": "seller",
+    "description": "Managing sellers.",
+    "priority": 0,
+    "providers": [
+        "Modules\\Seller\\Providers\\SellerServiceProvider"
+    ]
+}

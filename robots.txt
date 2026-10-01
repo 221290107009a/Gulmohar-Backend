@@ -1,0 +1,30 @@
+User-agent: *
+Allow: /
+
+# Block system or private areas
+Disallow: /admin/
+Disallow: /login
+Disallow: /register
+Disallow: /dashboard
+Disallow: /account
+Disallow: /api/
+Disallow: /cart
+Disallow: /checkout
+Disallow: /search?
+
+# Allow main content pages
+Allow: /en/
+Allow: /bahujan-quotes
+Allow: /buddha-temple
+Allow: /bahujan-books
+Allow: /bahujan-events
+Allow: /business-directory
+Allow: /bahujan-matrimony
+Allow: /bahujan-audiobooks
+Allow: /bahujan-songs
+Allow: /bahujan-tourist-places
+Allow: /bahujan-calendar
+Allow: /photo-frame-maker
+
+# Sitemap location
+Sitemap: https://sangho.app/sitemap.xml

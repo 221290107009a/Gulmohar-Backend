@@ -1,0 +1,381 @@
+<?php
+
+namespace Modules\Product\Http\Controllers;
+
+use Illuminate\Http\Response;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Routing\Controller;
+use Modules\Review\Entities\Review;
+use Illuminate\Contracts\View\View;
+use Modules\Product\Entities\Product;
+use Illuminate\Contracts\View\Factory;
+use Modules\Product\Events\ProductViewed;
+use Modules\Product\Filters\ProductFilter;
+use Illuminate\Contracts\Foundation\Application;
+use Modules\Product\Repositories\ProductRepository;
+use Modules\Product\Http\Middleware\SetProductSortOption;
+use Modules\Attribute\Entities\Attribute;
+use Modules\Attribute\Entities\AttributeSet;
+use Modules\Category\Entities\Category;
+use DB;
+
+class ProductController extends Controller
+{
+    use ProductSearch;
+
+    /**
+     * Create a new controller instance.
+     *
+     * @return void
+     */
+    public function __construct()
+    {
+        $this->middleware(SetProductSortOption::class)->only('index');
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     *
+     * @param Product $model
+     * @param ProductFilter $productFilter
+     *
+     * @return JsonResponse|Application|Factory|View
+     */
+    public function index(Product $model, ProductFilter $productFilter)
+    {
+        if (request()->expectsJson()) {
+            return $this->searchProducts($model, $productFilter);
+        }
+
+        return view('storefront::public.products.index');
+    }
+
+
+    /**
+     * Show the specified resource.
+     *
+     * @param string $slug
+     *
+     * @return Response
+     */
+    public function show($slug)
+    {
+        $product = ProductRepository::findBySlug($slug);
+        $relatedProducts = $product->relatedProducts()->with('variants')->forCard()->get();
+        $upSellProducts = $product->upSellProducts()->with('variants')->forCard()->get();
+        $review = $this->getReviewData($product);
+
+        $product->append([
+            'is_in_flash_sale',
+            'flash_sale_end_date',
+            'formatted_price_range',
+        ]);
+
+        $requestedVariant = request()->query('variant');
+
+        if ($requestedVariant) {
+            $product->variant = $product->variants()
+                ->withoutGlobalScope('active')
+                ->where('uid', $requestedVariant)
+                ->firstOrFail();
+        }
+
+        event(new ProductViewed($product));
+
+        return view('storefront::public.products.show', compact('product', 'relatedProducts', 'upSellProducts', 'review'));
+    }
+
+
+    private function getReviewData(Product $product)
+    {
+        if (!setting('reviews_enabled')) {
+            return null;
+        }
+
+        return Review::countAndAvgRating($product);
+    }
+
+    private function getProducts(Product $model)
+    {
+        return $model->search(request('query'))
+            ->query()
+            ->limit(10)
+            ->withName()
+            ->withBaseImage()
+            ->withPrice()
+            ->addSelect([
+                'products.id',
+                'products.slug',
+                'products.in_stock',
+                'products.manage_stock',
+                'products.qty',
+            ])
+            ->with(['files', 'categories' => function ($query) {
+                $query->limit(5);
+            }])
+            ->when(request()->filled('category'), $this->categoryQuery())
+            ->get();
+    }
+
+
+    /**
+     * Returns categories condition closure.
+     *
+     * @return Closure
+     */
+    private function categoryQuery()
+    {
+        return function (Builder $query) {
+            $query->whereHas('categories', function ($categoryQuery) {
+                $categoryQuery->where('slug', request('category'));
+            });
+        };
+    }
+
+    public function apiProducts()
+    {        
+        try {
+            $productIds = [];
+            $query = Product::where('is_active', 1);
+            
+            if (request()->filled('query')) {
+                $search = request('query');
+                $query = $query->whereHas('translations', function($q) use ($search) {
+                    $q->where('name', 'LIKE', "%{$search}%")
+                      ->orWhere('description', 'LIKE', "%{$search}%");   
+                });
+            }
+
+            if (request()->filled('category')) {
+                $keyword = request('category');
+                
+                $categoryIds = Category::query()
+                    ->join('category_translations', 'categories.id', '=', 'category_translations.category_id')
+                    ->where('category_translations.name', 'LIKE', '%' . $keyword . '%')
+                    ->where('categories.is_active', 1)
+                    ->select('categories.id')
+                    ->pluck('id')
+                    ->toArray();
+
+                $productIds = DB::table('product_categories')
+                    ->whereIn('category_id', $categoryIds)
+                    ->distinct()
+                    ->pluck('product_id')
+                    ->toArray();
+
+                $query->whereIn('id', $productIds);                
+            }
+            $productIds = (clone $query)->select('products.id')->resetOrders()->pluck('id');
+            
+            if (request()->filled('sort')) {
+                if (request('sort') == 'alphabetical') {
+                    $query->join('product_translations', 'products.id', '=', 'product_translations.product_id')
+                          ->where('product_translations.locale', app()->getLocale())
+                          ->orderBy('product_translations.name');
+                } elseif (request('sort') == 'priceLowToHigh') {
+                    $query->orderBy('price');
+                } elseif (request('sort') == 'priceHighToLow') {
+                    $query->orderByDesc('price');
+                } elseif (request('sort') == 'latest') {
+                    $query->latest();
+                }
+            }
+
+            $products = $query->with('translations', 'attributes.attribute.attributeSet')->get();
+            if (request()->filled('user_id')) {
+                foreach($products as $product){
+                    $exists = DB::table('wish_lists')
+                    ->where('product_id', $product->id)
+                    ->where('user_id', request('user_id'))
+                    ->exists();
+                    if ($exists) {
+                        $product->wish_list = 1;
+                    } else {
+                        $product->wish_list = 0;
+                    }
+                }
+            }            
+            return response()->json([
+                'status' => 'success',  
+                'data' => [
+                    'products' => $products,                    
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch products',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    public function apiProductShow($slug)
+    {
+        $product = ProductRepository::findBySlug($slug);
+        
+        $product->append([
+            'is_in_flash_sale',
+            'flash_sale_end_date', 
+            'formatted_price_range',
+        ]);
+        
+        event(new ProductViewed($product));
+
+        if (request()->filled('user_id')) {        
+            $exists = DB::table('wish_lists')
+            ->where('product_id', $product->id)
+            ->where('user_id', request('user_id'))
+            ->exists();
+            if ($exists) {
+                $product->wish_list = 1;
+            } else {
+                $product->wish_list = 0;
+            }
+        }
+
+        return response()->json([
+            'product' => $product,
+        ]);
+    }
+    
+    public function sellerProductStoreApi(Request $request)
+    {
+        try {
+            $input = $request->all();
+            if ($request->has('sellers') && !is_array($request->sellers)) {
+                $input['sellers'] = [$request->sellers];
+            }
+
+            $seller = \DB::table('sellers')
+                ->where('id', $input['sellers'][0])
+                ->where('current_status', 'approved')
+                ->first();
+
+            if (!$seller) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Invalid or unapproved seller',
+                ], 400);
+            }
+
+            $fileIds = [];
+            if ($request->hasFile('base_image')) {
+                $baseImage = $request->file('base_image');
+                $path = Storage::putFile('media', $baseImage);
+                $file = File::create([
+                    'user_id' => $seller->user_id,
+                    'disk' => 'public_storage',
+                    'filename' => $baseImage->getClientOriginalName(),
+                    'path' => $path,
+                    'extension' => $baseImage->getClientOriginalExtension(),
+                    'mime' => $baseImage->getMimeType(),
+                    'size' => $baseImage->getSize(),
+                ]);
+                $input['base_image'] = $file->id;
+                $fileIds['base_image'] = $file->id;
+            }
+
+            if ($request->hasFile('additional_images')) {
+                $additionalImages = [];
+                foreach ($request->file('additional_images') as $image) {
+                    $path = Storage::putFile('media', $image);
+                    $file = File::create([
+                        'user_id' => $seller->user_id,
+                        'disk' => 'public_storage',
+                        'filename' => $image->getClientOriginalName(),
+                        'path' => $path,
+                        'extension' => $image->getClientOriginalExtension(),
+                        'mime' => $image->getMimeType(),
+                        'size' => $image->getSize(),
+                    ]);
+                    $additionalImages[] = $file->id;
+                }
+                $input['additional_images'] = $additionalImages;
+                $fileIds['additional_images'] = $additionalImages;
+            }
+
+            $validatedData = Validator::make($input, [
+                'name' => 'required|string|max:255',
+                'price' => 'required|numeric|min:0',
+                'description' => 'required|string',
+                'category' => 'nullable|exists:categories,id',
+                'stock' => 'nullable|integer|min:0',
+                'base_image' => 'nullable|integer|exists:files,id',
+                'additional_images' => 'nullable|array',
+                'additional_images.*' => 'integer|exists:files,id',
+                'discountType' => 'nullable|in:fixed,percentage',
+                'discountValue' => 'nullable|numeric|min:0',
+                'specialPrice' => 'nullable|numeric|min:0',
+                'specialPriceStartDate' => 'nullable|date',
+                'specialPriceEndDate' => 'nullable|date|after_or_equal:specialPriceStartDate',
+                'sellers' => 'present|array|min:1',
+                'sellers.*' => [
+                    'integer',
+                    'exists:sellers,id',
+                    function ($attribute, $value, $fail) {
+                        $seller = \DB::table('sellers')
+                            ->where('id', $value)
+                            ->where('current_status', 'approved')
+                            ->first();
+                        
+                        if (!$seller) {
+                            $fail('The selected seller must be approved.');
+                        }
+                    }
+                ]
+            ])->validate();
+
+            $product = new Product();
+
+            $product->name = $validatedData['name'];
+            $product->description = $validatedData['description'];
+            $product->price = $validatedData['price'];
+            $product->special_price = $validatedData['specialPrice'] ?? null;
+            $product->special_price_type = $validatedData['discountType'] ?? null;
+            $product->special_price_start = $validatedData['specialPriceStartDate'] ?? null;
+            $product->special_price_end = $validatedData['specialPriceEndDate'] ?? null;
+            $product->manage_stock = isset($validatedData['stock']);
+            $product->in_stock = isset($validatedData['stock']) ? $validatedData['stock'] > 0 : true;
+            $product->qty = $validatedData['stock'] ?? 0;
+            $product->is_active = true;
+
+            $product->save();
+
+            if (isset($validatedData['category'])) {
+                $product->categories()->attach($validatedData['category']);
+            }
+
+            // Sync files using the file IDs we created
+            if (!empty($fileIds)) {
+                $product->syncFiles($fileIds);
+            }
+
+            if ($request->has('sellers')) {
+                $approvedSellerIds = \DB::table('sellers')
+                    ->whereIn('id', $input['sellers'])
+                    ->where('current_status', 'approved')
+                    ->pluck('id')
+                    ->toArray();
+                
+                $product->sellers()->sync($approvedSellerIds);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('product::messages.product_created'),
+                'data' => $product
+            ], 201);
+
+        } catch (\Exception $e) {
+            \Log::error('Product Creation Error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to create product',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+}

@@ -1,0 +1,1061 @@
+<?php
+
+namespace Modules\Service\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Modules\Service\Entities\Service;
+use Modules\User\Entities\UserService;
+use Modules\ProgramNotification\Entities\ProgramNotification;
+use Modules\ProgramNotification\Entities\ProgramRegistration;
+use Modules\Community\Entities\Community;
+use Modules\BuddhaVihar\Entities\BuddhaVihar;  
+use Modules\Product\Entities\Product;
+use Modules\BiodataFrame\Entities\BiodataFrame;
+use Modules\Template\Entities\Template;
+use Modules\Business\Entities\Business;
+use Modules\BiodataFrame\Entities\MarriageBiodata;
+use Modules\Community\Entities\CommunityMembers;
+use Modules\Community\Entities\CommunityPost;
+use Modules\Audiobook\Entities\Audiobook;
+use Modules\AudioSong\Entities\AudioSongAlbum;
+use Modules\Business\Entities\BusinessReview;
+use Modules\Business\Entities\UserBusinessLikes;
+use Modules\Badge\Entities\Badge;
+use Illuminate\Support\Facades\Storage;
+use Carbon\Carbon;
+
+class HomeScreenController
+{
+    /**
+     * Get unified home screen data with all sections
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function index(Request $request)
+    {
+        try {
+            $userId = $request->user_id ?? null;
+            $page = $request->input('page', 1);
+            $perPage = $request->input('per_page', 10);
+            
+            // Get disabled services for this user
+            $disabledServiceIds = [];
+            if ($userId) {
+                $disabledServiceIds = UserService::where('user_id', $userId)
+                    ->where('is_enabled', false)
+                    ->pluck('service_id')
+                    ->toArray();
+            }
+            
+            // Build all sections
+            $allSections = $this->buildSections($userId, $disabledServiceIds);
+            
+            // Paginate sections
+            $total = count($allSections);
+            $offset = ($page - 1) * $perPage;
+            $sections = array_slice($allSections, $offset, $perPage);
+            
+            return response()->json([
+                'success' => true,
+                'sections' => array_values($sections),
+                'pagination' => [
+                    'current_page' => (int) $page,
+                    'per_page' => (int) $perPage,
+                    'total' => $total,
+                    'total_pages' => (int) ceil($total / $perPage),
+                    'has_more' => $offset + $perPage < $total,
+                ]
+            ], 200);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * Build all sections with their data
+     * 
+     * @param string|null $userId
+     * @param array $disabledServiceIds
+     * @return array
+     */
+    private function buildSections($userId, $disabledServiceIds)
+    {
+        // Map service names to section types
+        $serviceToSectionMap = [
+            'share_quotes' => 'quote',
+            'our_community' => 'trending-communities',
+            'boudh_aachar_sanhita' => 'boudh-aachar',
+            'program_notifications' => 'upcoming-program',
+            'marriage_biodata' => 'marriage-biodata',
+            'calendar' => 'calendar',
+            'bahujan_sahity' => 'product-listing',
+            'online_store' => 'product-listing',
+            'tourist_places' => 'tourist-place',
+            'buddh_vihar' => 'nearest-vihar',
+        ];
+        
+        // Get disabled service names
+        $disabledSectionTypes = [];
+        if (!empty($disabledServiceIds)) {
+            $disabledServices = Service::whereIn('id', $disabledServiceIds)->get();
+            foreach ($disabledServices as $service) {
+                $cleanName = str_replace(["\n", "\r", "\t"], ' ', $service->name);
+                $cleanName = trim($cleanName);
+                $cleanName = strtolower(str_replace(' ', '_', $cleanName));
+                
+                if (isset($serviceToSectionMap[$cleanName])) {
+                    $disabledSectionTypes[] = $serviceToSectionMap[$cleanName];
+                }
+            }
+        }
+        
+        // Define all available sections with service metadata
+        $allSections = [
+            ['id' => 'today-on-sangho', 'type' => 'today-on-sangho', 'fixed' => true, 'service_id' => null, 'priority' => 0],
+            ['id' => 'ad-banner', 'type' => 'ad-banner', 'service_id' => null, 'priority' => 1],
+            ['id' => 'trending-communities', 'type' => 'trending-communities', 'service_id' => 'community', 'priority' => 1, 'is_unique' => true],
+            ['id' => 'program-vichar', 'type' => 'program-vichar', 'service_id' => 'programs', 'priority' => 1, 'is_unique' => true],
+            ['id' => 'quotes-speed-dial', 'type' => 'quotes-speed-dial', 'service_id' => 'quotes', 'priority' => 1, 'is_unique' => true],
+            ['id' => 'happening-soon', 'type' => 'happening-soon', 'service_id' => null, 'priority' => 2],
+            ['id' => 'business-listing2', 'type' => 'business-listing2', 'service_id' => 'business', 'priority' => 1, 'is_unique' => true],
+            ['id' => 'modern-collage', 'type' => 'modern-collage', 'service_id' => null, 'priority' => 3],
+            ['id' => 'multi-content-section', 'type' => 'multi-content-section', 'service_id' => null, 'priority' => 4],
+            ['id' => 'quote', 'type' => 'quote', 'service_id' => 'quotes', 'priority' => 2, 'is_unique' => false],
+            ['id' => 'mini-player', 'type' => 'mini-player', 'service_id' => null, 'priority' => 5],
+            ['id' => 'boudh-aachar', 'type' => 'boudh-aachar', 'service_id' => null, 'priority' => 6],
+            ['id' => 'upcoming-program', 'type' => 'upcoming-program', 'service_id' => 'programs', 'priority' => 2, 'is_unique' => false],
+            ['id' => 'marriage-biodata', 'type' => 'marriage-biodata', 'service_id' => 'biodata', 'priority' => 1, 'is_unique' => true],
+            ['id' => 'marriage-biodata2', 'type' => 'marriage-biodata2', 'service_id' => 'biodata', 'priority' => 2, 'is_unique' => false],
+            ['id' => 'product-listing', 'type' => 'product-listing', 'service_id' => 'products', 'priority' => 1, 'is_unique' => true],
+            ['id' => 'tourist-place', 'type' => 'tourist-place', 'service_id' => 'tourism', 'priority' => 1, 'is_unique' => true],
+            ['id' => 'share-button', 'type' => 'share-button', 'service_id' => null, 'priority' => 7],
+            ['id' => 'audiosong-quick-picks', 'type' => 'audiosong-quick-picks', 'service_id' => 'audio', 'priority' => 1, 'is_unique' => true],
+            ['id' => 'audiobook-quick-picks', 'type' => 'audiobook-quick-picks', 'service_id' => 'audio', 'priority' => 2, 'is_unique' => false],
+            ['id' => 'footer-space', 'type' => 'footer-space', 'fixed' => true, 'service_id' => null, 'priority' => 999],
+        ];
+        
+        // Filter out disabled sections
+        $enabledSections = array_filter($allSections, function($section) use ($disabledSectionTypes) {
+            return !in_array($section['type'], $disabledSectionTypes);
+        });
+        
+        // Separate fixed and non-fixed sections
+        $fixedSections = [];
+        $nonFixedSections = [];
+        
+        foreach ($enabledSections as $section) {
+            if (isset($section['fixed']) && $section['fixed']) {
+                $fixedSections[] = $section;
+            } else {
+                $nonFixedSections[] = $section;
+            }
+        }
+        
+        // Order sections by service: unique services first, then related sections
+        $orderedSections = $this->orderSectionsByService($nonFixedSections);
+        
+        // Build final sections array with data
+        $finalSections = [];
+        
+        // Add today-on-sangho first (if enabled)
+        $todayOnSangho = array_values(array_filter($fixedSections, fn($s) => $s['type'] === 'today-on-sangho'));
+        if (!empty($todayOnSangho)) {
+            $finalSections[] = $this->buildSectionData($todayOnSangho[0], $userId);
+        }
+        
+        // Add ordered sections
+        foreach ($orderedSections as $section) {
+            $finalSections[] = $this->buildSectionData($section, $userId);
+        }
+        
+        // Add footer-space last (if enabled)
+        $footerSpace = array_values(array_filter($fixedSections, fn($s) => $s['type'] === 'footer-space'));
+        if (!empty($footerSpace)) {
+            $finalSections[] = $this->buildSectionData($footerSpace[0], $userId);
+        }
+        
+        return $finalSections;
+    }
+    
+    /**
+     * Order sections by service: unique services first, then related sections
+     * 
+     * @param array $sections
+     * @return array
+     */
+    private function orderSectionsByService($sections)
+    {
+        // Separate sections with and without service_id
+        $serviceSections = array_filter($sections, fn($s) => !empty($s['service_id']));
+        $nonServiceSections = array_filter($sections, fn($s) => empty($s['service_id']));
+        
+        // Separate unique and non-unique service sections
+        $uniqueSections = array_filter($serviceSections, fn($s) => isset($s['is_unique']) && $s['is_unique']);
+        $nonUniqueSections = array_filter($serviceSections, fn($s) => !isset($s['is_unique']) || !$s['is_unique']);
+        
+        // Sort by priority
+        usort($uniqueSections, fn($a, $b) => $a['priority'] <=> $b['priority']);
+        usort($nonUniqueSections, fn($a, $b) => $a['priority'] <=> $b['priority']);
+        usort($nonServiceSections, fn($a, $b) => $a['priority'] <=> $b['priority']);
+        
+        // Merge: unique service sections first, then non-service sections, then non-unique service sections
+        return array_merge($uniqueSections, $nonServiceSections, $nonUniqueSections);
+    }
+    
+    /**
+     * Build section data based on section type
+     * 
+     * @param array $section
+     * @param string|null $userId
+     * @return array
+     */
+    private function buildSectionData($section, $userId)
+    {
+        $sectionData = [
+            'id' => $section['id'],
+            'type' => $section['type'],
+            'enabled' => true,
+            'data' => null
+        ];
+        
+        // Fetch data based on section type
+        switch ($section['type']) {
+            case 'trending-communities':
+                $sectionData['data'] = $this->getTrendingCommunities($userId);
+                break;
+                
+            case 'program-vichar':
+            case 'upcoming-program':
+                $sectionData['data'] = $this->getProgramNotifications($userId);
+                break;
+                
+            case 'product-listing':
+                $sectionData['data'] = $this->getProducts();
+                break;
+                
+            case 'marriage-biodata':
+            case 'marriage-biodata2':
+                $sectionData['data'] = $this->getBiodataFrames();
+                break;
+                
+            case 'business-listing2':
+                $sectionData['data'] = $this->getBusinesses();
+                break;
+                
+            case 'quotes-speed-dial':
+                $sectionData['data'] = $this->getHomeTemplates();
+                break;
+                
+            // Sections that don't need backend data
+            case 'today-on-sangho':
+            case 'ad-banner':
+                $sectionData['data'] = null;
+                break;
+                
+            case 'happening-soon':
+                $sectionData['data'] = $this->getProgramNotifications($userId);
+                break;
+                
+            case 'modern-collage':
+            case 'quote':
+                $sectionData['data'] = $this->getHomeTemplates();
+                break;
+                
+            case 'multi-content-section':
+                $sectionData['data'] = $this->getMultiContentData($userId);
+                break;
+                
+            case 'mini-player':
+            case 'boudh-aachar':
+            case 'tourist-place':
+            case 'share-button':
+            case 'audiosong-quick-picks':
+            case 'audiobook-quick-picks':
+            case 'footer-space':
+            default:
+                // These sections either fetch their own data or don't need data
+                $sectionData['data'] = null;
+                break;
+        }
+        
+        return $sectionData;
+    }
+    
+    /**
+     * Get trending communities
+     */
+    private function getTrendingCommunities($userId)
+    {
+        try {
+            $communities = Community::where('is_active', 1)
+                ->latest()
+                ->limit(10)
+                ->get();
+            
+            $communitiesData = [];
+            foreach ($communities as $community) {
+                $communitiesData[] = [
+                    'id' => $community->id,
+                    'name' => $community->name,
+                    'description' => $community->description,
+                    'image' => $community->logo->path ?? '',
+                    'members_count' => $community->members()->count(),
+                    'is_joined' => $userId ? $community->members()->where('user_id', $userId)->exists() : false,
+                ];
+            }
+            
+            return ['communities' => $communitiesData];
+        } catch (\Exception $e) {
+            return ['communities' => []];
+        }
+    }
+    
+    /**
+     * Get program notifications
+     */
+    private function getProgramNotifications($userId)
+    {
+        try {
+            $programs = ProgramNotification::where('is_active', 1)
+                ->where(function($query) {
+                    $query->whereDate('start_date', '>=', Carbon::today())
+                        ->orWhereDate('end_date', '>=', Carbon::today());
+                })
+                ->with(['community'])
+                ->latest()
+                ->limit(10)
+                ->get();
+            
+            $programsData = [];
+            foreach ($programs as $program) {
+                // Initialize default values
+                $is_registered = 0;
+                $is_attended = 0;
+                $attended_at = null;
+                $is_paid = 0;
+
+                if ($userId) {
+                    $registration = ProgramRegistration::where('program_notification_id', $program->id)
+                        ->where('user_id', $userId)
+                        ->first();
+                    
+                    if ($registration) {
+                        $is_registered = 1;
+                        $is_attended = $registration->is_attended ? 1 : 0;
+                        $attended_at = $registration->attended_at;
+                        $is_paid = $registration->is_paid ? 1 : 0;
+                    }
+                }
+
+                $programsData[] = [
+                    'id' => $program->id,
+                    'name' => $program->name ?? $program->title,
+                    'title' => $program->title,
+                    'description' => $program->description,
+                    'banner' => $program->logo->path ?? '',
+                    'donation_qr_image' => $program->image->path ?? '',
+                    'start_date' => $program->start_date,
+                    'end_date' => $program->end_date,
+                    'start_time' => $program->start_time,
+                    'end_time' => $program->end_time,
+                    'start_date_time' => $program->start_date . ' ' . $program->start_time,
+                    'end_date_time' => $program->end_date . ' ' . $program->end_time,
+                    'location' => $program->location,
+                    'address' => $program->address ?? $program->location,
+                    'latitude' => $program->latitude,
+                    'longitude' => $program->longitude,
+                    'registration_required' => $program->registration_required,
+                    'registration_type' => $program->registration_type,
+                    'registration_amount' => $program->registration_amount,
+                    'is_registered' => $is_registered,
+                    'is_attended' => $is_attended,
+                    'attended_at' => $attended_at,
+                    'is_paid' => $is_paid,
+                    'total_registered' => ProgramRegistration::where('program_notification_id', $program->id)->count(),
+                    'total_attended' => ProgramRegistration::where('program_notification_id', $program->id)->where('is_attended', 1)->count(),
+                    'community' => [
+                        'id' => $program->community->id ?? null,
+                        'name' => $program->community->name ?? null,
+                    ],
+                ];
+            }
+            
+            return ['programs' => $programsData];
+        } catch (\Exception $e) {
+            \Log::error('Error in getProgramNotifications: ' . $e->getMessage());
+            return ['programs' => []];
+        }
+    }
+    
+    /**
+     * Get products for home screen
+     */
+    private function getProducts()
+    {
+        try {
+            $products = Product::where('is_active', 1)
+                ->whereHas('categories', function ($q) {
+                    $q->where('parent_id', 10);
+                })
+                ->with('translations', 'attributes.attribute.attributeSet')
+                ->latest()
+                ->limit(10)
+                ->get();
+            
+            return ['products' => $products];
+        } catch (\Exception $e) {
+            return ['products' => []];
+        }
+    }
+    
+    /**
+     * Get biodata frames for home screen
+     */
+    private function getBiodataFrames()
+    {
+        try {
+            $biodataFrames = BiodataFrame::where('is_active', 1)
+                ->limit(10)
+                ->get();
+            
+            foreach ($biodataFrames as $frame) {
+                if ($frame->logo && $frame->logo->path) {
+                    $frame->frame_url = $frame->logo->path;
+                }
+                if ($frame->list_image && $frame->list_image->path) {
+                    $frame->fill_frame_url = $frame->list_image->path;
+                }
+            }
+            
+            return ['biodata_frames' => $biodataFrames];
+        } catch (\Exception $e) {
+            return ['biodata_frames' => []];
+        }
+    }
+    
+    /**
+     * Get businesses for home screen
+     */
+    private function getBusinesses()
+    {
+        try {
+            $businesses = Business::where('is_active', 1)
+                ->latest()
+                ->limit(10)
+                ->get();
+            
+            foreach ($businesses as $business) {
+                // Process media URLs
+                $mediaItems = [];
+                $mediaIds = explode(',', $business->media);
+                
+                foreach ($mediaIds as $mediaId) {
+                    if (!empty($mediaId)) {
+                        $mediaUrl = Storage::url('business_media/' . $mediaId);
+                        $mediaItems[] = $mediaUrl;
+                    }
+                }
+                $business->media_urls = $mediaItems;
+                
+                // Get reviews
+                $reviews = BusinessReview::where([
+                    'business_id' => $business->id,
+                    'status' => 'verified'
+                ])->get();
+                
+                $business->total_reviews = $reviews->count();
+                $business->average_rating = $reviews->avg('rating') ?? 0;
+                $business->like_count = UserBusinessLikes::where('business_id', $business->id)->count();
+            }
+            
+            return ['businesses' => $businesses];
+        } catch (\Exception $e) {
+            return ['businesses' => []];
+        }
+    }
+    
+    /**
+     * Get home templates for quotes speed dial
+     */
+    private function getHomeTemplates()
+    {
+        try {
+            $templates = Template::with(['templateCategory'])
+                ->where('is_active', 1)
+                ->whereHas('templateCategory', function($q) {
+                    $q->where('is_active', 1);
+                })
+                ->inRandomOrder()
+                ->limit(10)
+                ->get();
+            
+            foreach ($templates as $template) {
+                if ($template->logo && $template->logo->path) {
+                    $template->template_url = $template->logo->path;
+                }
+                
+                if (!empty($template->badge_id)) {
+                    $badge = Badge::find($template->badge_id);
+                    if ($badge && $badge->logo && $badge->logo->path) {
+                        $template->badge_url = $badge->logo->path;
+                    }
+                }
+                
+                // Set share message
+                $template->share_message = '';
+                if (isset($template->message) && $template->message != '') {
+                    if ($template->is_default_message) {
+                        if (isset($template->templateCategory->message) && $template->templateCategory->message != '') {
+                            if ($template->templateCategory && $template->templateCategory->is_default_message) {
+                                $template->share_message = setting('quote_share_message');
+                            } else {
+                                $template->share_message = $template->templateCategory->message;
+                            }
+                        } else {
+                            $template->share_message = setting('quote_share_message');
+                        }
+                    } else {
+                        $template->share_message = $template->message;
+                    }
+                } elseif (isset($template->templateCategory->message) && $template->templateCategory->message != '') {
+                    if ($template->templateCategory && $template->templateCategory->is_default_message) {
+                        $template->share_message = setting('quote_share_message');
+                    } else {
+                        $template->share_message = $template->templateCategory->message;
+                    }
+                } else {
+                    $template->share_message = setting('quote_share_message');
+                }
+                
+                unset($template->templateCategory);
+            }
+            
+            return ['templates' => $templates];
+        } catch (\Exception $e) {
+            return ['templates' => []];
+        }
+    }
+
+    /**
+     * Get multi-content data (Songs, Books, Communities)
+     */
+    private function getMultiContentData($userId)
+    {
+        try {
+            $data = [];
+
+            // 1. Audio Songs
+            $albums = AudioSongAlbum::where('is_active', 1)
+                ->latest()
+                ->limit(3)
+                ->get();
+
+            $songItems = [];
+            foreach ($albums as $album) {
+                $tracks = $album->tracks()->limit(3)->get();
+                $listItems = [];
+                foreach ($tracks as $track) {
+                    $listItems[] = [
+                        'id' => $track->id,
+                        'title' => $track->title,
+                        'subtitle' => $album->title,
+                        'image' => $album->cover_image ?? '',
+                    ];
+                }
+
+                $songItems[] = [
+                    'id' => 'song-' . $album->id,
+                    'title' => $album->title,
+                    'description' => 'Trending Songs',
+                    'stats' => $album->tracks()->count() . ' tracks',
+                    'gridImages' => [$album->cover_image ?? ''],
+                    'listItems' => $listItems
+                ];
+            }
+
+            // 2. Audiobooks
+            // Note: Audiobook module currently uses Matrimony namespace/entities in this codebase
+            $audiobooks = Audiobook::where('is_active', 1)
+                ->latest()
+                ->limit(3)
+                ->get();
+
+            $bookItems = [];
+            foreach ($audiobooks as $book) {
+                $chapters = $book->chapters()->limit(3)->get();
+                $listItems = [];
+                foreach ($chapters as $chapter) {
+                    $listItems[] = [
+                        'id' => $chapter->id,
+                        'title' => $chapter->title,
+                        'subtitle' => $book->name,
+                        'image' => $book->logo->path ?? '',
+                    ];
+                }
+
+                $bookItems[] = [
+                    'id' => 'book-' . $book->id,
+                    'title' => $book->name,
+                    'description' => 'Top picks for you',
+                    'stats' => $book->chapters()->count() . ' chapters',
+                    'gridImages' => [$book->logo->path ?? ''],
+                    'listItems' => $listItems
+                ];
+            }
+
+
+            // 3. Communities
+            /* $communities = Community::where('is_active', 1)
+                ->latest()
+                ->limit(3)
+                ->get();
+
+            foreach ($communities as $community) {
+                // Count members using CommunityMembers model
+                $membersCount = \Modules\Community\Entities\CommunityMembers::where('community_id', $community->id)
+                    ->where('is_active', 1)
+                    ->count();
+                
+                $data[] = [
+                    'id' => 'community-' . $community->id,
+                    'title' => $community->name,
+                    'description' => 'Active for you',
+                    'stats' => $membersCount . ' members',
+                    'gridImages' => [$community->logo->path ?? ''],
+                    'listItems' => [] // Communities might not have sub-items in the same way, or we could add sub-communities/posts
+                ];
+            } */
+            // Merge all items: Songs first, then Books, then Communities
+            return array_merge($songItems, $bookItems, $data);
+
+        } catch (\Exception $e) {
+            \Log::error('Error in getMultiContentData: ' . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Get daily highlights for user
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getDailyHighlights(Request $request)
+    {
+        try {
+            $userId = $request->user_id ?? null;
+            
+            // Get user's enabled services
+            $enabledServiceIds = $this->getUserEnabledServices($userId);
+            
+            // Build highlight items based on enabled services
+            $highlights = $this->buildHighlightItems($userId, $enabledServiceIds);
+            
+            return response()->json([
+                'success' => true,
+                'highlights' => $highlights,
+                'last_updated' => now()->toIso8601String()
+            ], 200);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * Get user's enabled service IDs
+     */
+    private function getUserEnabledServices($userId)
+    {
+        if (!$userId) {
+            // Return all active services if no user
+            return Service::where('is_active', 1)->pluck('id')->toArray();
+        }
+        
+        // Get services user has NOT disabled
+        $disabledServiceIds = UserService::where('user_id', $userId)
+            ->where('is_enabled', false)
+            ->pluck('service_id')
+            ->toArray();
+        
+        return Service::where('is_active', 1)
+            ->whereNotIn('id', $disabledServiceIds)
+            ->pluck('id')
+            ->toArray();
+    }
+    
+    /**
+     * Build highlight items with user-specific data in fixed order
+     */
+    private function buildHighlightItems($userId, $enabledServiceIds)
+    {
+        $highlights = [];
+        
+        // Fixed order as per requirements:
+        // 1. Day wise Quote
+        // 2. Community Activity (today's posts count or join message)
+        // 3. Upcoming Programs
+        // 4. Near Buddha Vihar
+        // 5. Other content
+        
+        $orderedHighlights = [
+            'share_quotes' => null,
+            'our_community' => null,
+            'program_notifications' => null,
+            'buddh_vihar' => null,
+            'marriage_biodata' => null,
+            'bahujan_sahity' => null,
+            'online_store' => null,
+        ];
+        
+        // Get all services and map them
+        $services = Service::whereIn('id', $enabledServiceIds)->get();
+        
+        foreach ($services as $service) {
+            // Clean service name - handle both actual newlines and escaped newline strings
+            $cleanName = $service->name;
+            $cleanName = str_replace(['\\n', '\\r', '\\t', "\n", "\r", "\t"], ' ', $cleanName);
+            $cleanName = preg_replace('/\s+/', ' ', $cleanName); // Replace multiple spaces with single space
+            $cleanName = trim($cleanName);
+            $serviceName = strtolower(str_replace(' ', '_', $cleanName));
+            
+            // Debug logging
+            /* \Log::info('Processing service', [
+                'original_name' => $service->name,
+                'cleaned_name' => $cleanName,
+                'service_name' => $serviceName
+            ]); */
+            
+            $highlightItem = $this->getServiceHighlight($service, $userId);
+            
+            // Debug logging
+            /* \Log::info('Highlight item generated', [
+                'service_name' => $serviceName,
+                'highlight' => $highlightItem
+            ]); */
+            
+            if ($highlightItem) {
+                // Map service names to ordered keys
+                if ($serviceName === 'share_quotes' || $serviceName === 'shrestha_vichar') {
+                    $orderedHighlights['share_quotes'] = $highlightItem;
+                } elseif ($serviceName === 'our_community' || $serviceName === 'community') {
+                    $orderedHighlights['our_community'] = $highlightItem;
+                } elseif ($serviceName === 'program_notifications') {
+                    $orderedHighlights['program_notifications'] = $highlightItem;
+                } elseif ($serviceName === 'buddh_vihar') {
+                    $orderedHighlights['buddh_vihar'] = $highlightItem;
+                } elseif ($serviceName === 'marriage_biodata') {
+                    $orderedHighlights['marriage_biodata'] = $highlightItem;
+                } elseif ($serviceName === 'bahujan_sahity' || $serviceName === 'online_store') {
+                    if (!$orderedHighlights['bahujan_sahity']) {
+                        $orderedHighlights['bahujan_sahity'] = $highlightItem;
+                    }
+                }
+            }
+        }
+        
+        // Build final array in order, excluding nulls
+        foreach ($orderedHighlights as $highlight) {
+            if ($highlight !== null) {
+                $highlights[] = $highlight;
+            }
+        }
+        
+        // Debug final highlights
+        /* \Log::info('Final highlights', ['count' => count($highlights), 'highlights' => $highlights]); */
+        
+        return $highlights;
+    }
+    
+    /**
+     * Get highlight data for specific service
+     */
+    private function getServiceHighlight($service, $userId)
+    {
+        $cleanName = str_replace(["\n", "\r", "\t"], ' ', $service->name);
+        $cleanName = trim($cleanName);
+        $serviceName = strtolower(str_replace(' ', '_', $cleanName));
+        
+        switch ($serviceName) {
+            case 'our_community':
+            case 'community':
+                return $this->getCommunityHighlight($userId);
+                
+            case 'program_notifications':
+                return $this->getProgramHighlight($userId);
+                
+            case 'marriage_biodata':
+                return $this->getBiodataHighlight($userId);
+                
+            case 'share_quotes':
+            case 'shrestha_vichar':
+                return $this->getQuoteHighlight($userId);
+                
+            case 'bahujan_sahity':
+            case 'online_store':
+                return $this->getProductHighlight($userId);
+                
+            case 'buddh_vihar':
+                return $this->getViharHighlight($userId);
+                
+            default:
+                return null;
+        }
+    }
+    
+    /**
+     * Community highlight with user stats
+     */
+    private function getCommunityHighlight($userId)
+    {
+        try {
+            $subtitle = "Join communities";
+            $newPosts = 0;
+            
+            if ($userId) {
+                // First check if user has joined any communities
+                $userCommunitiesCount = CommunityMembers::where('user_id', $userId)
+                    ->where('is_active', 1)
+                    ->count();
+                
+                if ($userCommunitiesCount > 0) {
+                    // User has joined communities, count today's new posts
+                    // Get user's community IDs
+                    $userCommunityIds = CommunityMembers::where('user_id', $userId)
+                        ->where('is_active', 1)
+                        ->pluck('community_id')
+                        ->toArray();
+                    
+                    // Count today's posts in user's communities
+                    $newPosts = CommunityPost::whereIn('community_id', $userCommunityIds)
+                        ->whereDate('created_at', Carbon::today())
+                        ->count();
+                    
+                    $subtitle = $newPosts > 0 ? "$newPosts new posts today" : "No new posts today";
+                } else {
+                    // User hasn't joined any community
+                    $subtitle = "Join communities to see updates";
+                }
+            } else {
+                // For guest users, show total active communities
+                $totalCommunities = Community::where('is_active', 1)->count();
+                $subtitle = "$totalCommunities active communities";
+            }
+            
+            return [
+                'id' => 'community_activity',
+                'icon' => 'people',
+                'icon_color' => '#EF4444',
+                'title' => 'Community Activity',
+                'subtitle' => $subtitle,
+                'priority' => $newPosts > 0 ? 10 : 5,
+                'action_type' => 'navigate',
+                'action_data' => ['screen' => 'Communities']
+            ];
+        } catch (\Exception $e) {
+            \Log::error('getCommunityHighlight failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return null;
+        }
+    }
+    
+    /**
+     * Program highlight with upcoming events
+     */
+    private function getProgramHighlight($userId)
+    {
+        try {
+            $upcomingPrograms = ProgramNotification::where('is_active', 1)
+                ->where(function($query) {
+                    $query->whereDate('start_date', '>=', Carbon::today())
+                        ->orWhereDate('end_date', '>=', Carbon::today());
+                })
+                ->count();
+            
+            $registeredCount = 0;
+            if ($userId) {
+                // Get upcoming program IDs
+                $upcomingProgramIds = ProgramNotification::where('is_active', 1)
+                    ->where(function($query) {
+                        $query->whereDate('start_date', '>=', Carbon::today())
+                            ->orWhereDate('end_date', '>=', Carbon::today());
+                    })
+                    ->pluck('id')
+                    ->toArray();
+                
+                // Count user's registrations for upcoming programs
+                $registeredCount = ProgramRegistration::where('user_id', $userId)
+                    ->whereIn('program_notification_id', $upcomingProgramIds)
+                    ->count();
+            }
+            
+            $subtitle = $registeredCount > 0 
+                ? "You're registered for $registeredCount events"
+                : "$upcomingPrograms events this week";
+            
+            return [
+                'id' => 'upcoming_events',
+                'icon' => 'calendar',
+                'icon_color' => '#10B981',
+                'title' => 'Upcoming Events',
+                'subtitle' => $subtitle,
+                'priority' => $registeredCount > 0 ? 15 : 8,
+                'action_type' => 'navigate',
+                'action_data' => ['screen' => 'Programs']
+            ];
+        } catch (\Exception $e) {
+            \Log::error('getProgramHighlight failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return null;
+        }
+    }
+    
+    /**
+     * Biodata highlight
+     */
+    private function getBiodataHighlight($userId)
+    {
+        try {
+            $userBiodataCount = 0;
+            if ($userId) {
+                $userBiodataCount = MarriageBiodata::where('user_id', $userId)->count();
+            }
+            
+            $subtitle = $userBiodataCount > 0 
+                ? "You have $userBiodataCount biodata" 
+                : "Create your biodata";
+            
+            return [
+                'id' => 'marriage_biodata',
+                'icon' => 'heart',
+                'icon_color' => '#EC4899',
+                'title' => 'Marriage Biodata',
+                'subtitle' => $subtitle,
+                'priority' => $userBiodataCount === 0 ? 12 : 6,
+                'action_type' => 'navigate',
+                'action_data' => ['screen' => 'Biodata']
+            ];
+        } catch (\Exception $e) {
+            \Log::error('getBiodataHighlight failed', ['error' => $e->getMessage()]);
+            return null;
+        }
+    }
+    
+    /**
+     * Quote of the day with category-based filtering
+     */
+    private function getQuoteHighlight($userId)
+    {
+        try {
+            // Priority 1: Try to get quote from category 1 (special days) matching today's date
+            $today = date('m-d');
+            $quote = Template::where('is_active', 1)
+                ->whereHas('templateCategory', function($q) {
+                    $q->where('is_active', 1);
+                })
+                ->whereRaw("FIND_IN_SET(1, template_category_id)")
+                ->whereRaw("DATE_FORMAT(day_special_date, '%m-%d') = ?", [$today])
+                ->inRandomOrder()
+                ->first();
+            
+            // Priority 2: If no special day quote, get any random quote from category 1
+            if (!$quote) {
+                $quote = Template::where('is_active', 1)
+                    ->whereHas('templateCategory', function($q) {
+                        $q->where('is_active', 1);
+                    })
+                    ->whereRaw("FIND_IN_SET(1, template_category_id)")
+                    ->inRandomOrder()
+                    ->first();
+            }
+            
+            // Priority 3: If still no quote, get any random active quote
+            if (!$quote) {
+                $quote = Template::where('is_active', 1)
+                    ->whereHas('templateCategory', function($q) {
+                        $q->where('is_active', 1);
+                    })
+                    ->inRandomOrder()
+                    ->first();
+            }
+            
+            $subtitle = 'Inspire yourself today';
+            if ($quote && isset($quote->name)) {
+                $quoteName = strip_tags($quote->name);
+                $subtitle = mb_strlen($quoteName) > 50 ? mb_substr($quoteName, 0, 50) . '...' : $quoteName;
+            }
+            
+            return [
+                'id' => 'quote_of_day',
+                'icon' => 'leaf',
+                'icon_color' => '#A855F7',
+                'title' => 'Quote of the Day',
+                'subtitle' => $subtitle,
+                'priority' => 7,
+                'action_type' => 'navigate',
+                'action_data' => ['screen' => 'Quotes']
+            ];
+        } catch (\Exception $e) {
+            \Log::error('getQuoteHighlight failed', ['error' => $e->getMessage()]);
+            return null;
+        }
+    }
+    
+    /**
+     * Product highlight
+     */
+    private function getProductHighlight($userId)
+    {
+        try {
+            $newProducts = Product::where('is_active', 1)
+                ->where('created_at', '>', now()->subWeek())
+                ->count();
+            
+            $subtitle = $newProducts > 0 
+                ? "$newProducts new products this week" 
+                : "Explore our products";
+            
+            return [
+                'id' => 'new_products',
+                'icon' => 'cart',
+                'icon_color' => '#F59E0B',
+                'title' => 'New Arrivals',
+                'subtitle' => $subtitle,
+                'priority' => $newProducts > 0 ? 9 : 4,
+                'action_type' => 'navigate',
+                'action_data' => ['screen' => 'Products']
+            ];
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+    
+    /**
+     * Buddha Vihar highlight (location-based)
+     */
+    private function getViharHighlight($userId)
+    {
+        try {
+            $totalVihars = BuddhaVihar::where('is_active', 1)->count();
+            
+            return [
+                'id' => 'near_you',
+                'icon' => 'location',
+                'icon_color' => '#3B82F6',
+                'title' => 'Near You',
+                'subtitle' => "Find Buddha Vihars nearby",
+                'priority' => 5,
+                'action_type' => 'navigate',
+                'action_data' => ['screen' => 'BuddhaVihar']
+            ];
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+}

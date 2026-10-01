@@ -1,0 +1,8 @@
+{
+    "name": "translation-module",
+    "private": true,
+    "dependencies": {
+        "datatables.net-bs": "^2.0.3",
+        "x-editable": "^1.5.1"
+    }
+}

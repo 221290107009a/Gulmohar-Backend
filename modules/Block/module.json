@@ -1,0 +1,9 @@
+{
+    "name": "Block",
+    "alias": "block",
+    "description": "Managing blocks.",
+    "priority": 0,
+    "providers": [
+        "Modules\\Block\\Providers\\BlockServiceProvider"
+    ]
+}

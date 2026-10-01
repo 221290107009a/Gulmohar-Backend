@@ -1,0 +1,119 @@
+@extends('storefront::public.layout')
+
+@section('title', setting('store_tagline'))
+
+@section('content')
+    <div class="sangho-app-main container-fluid bg-white p-0">
+        <!-- Navbar & Hero Start -->
+        <div class="container-fluid position-relative p-0" id="home">
+            <div class="container-fluid bg-primary hero-header">
+                <div class="container px-lg-5">
+                    <div class="row g-5">
+                        <div class="col-lg-12 text-center text-lg-start">                        
+                            <img class="img-logo animated slideInDown" width="100" src="{{ $logo }}" alt="">                            
+                            @if (setting('storefront_slide_section_enabled') == 1)
+                                {!! the_content(setting('storefront_slide_section_content')) !!}
+                            @endif
+                        </div>
+                        <div class="col-lg-6 d-flex justify-content-center justify-content-lg-end wow fadeInUp" data-wow-delay="0.3s">
+                            <div class="owl-carousel screenshot-carousel">
+                                @foreach($sliders as $slider)
+                                    <img class="img-fluid" src="{{ $slider->file->path }}" alt="{{ $slider->file->filename }}">
+                                @endforeach
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        @if (setting('storefront_about_section_enabled') == 1)
+            {!! the_content(setting('storefront_about_section_content')) !!}
+        @endif
+        @if (setting('storefront_download_section_enabled') == 1)
+            {!! the_content(setting('storefront_download_section_content')) !!}
+        @endif
+        <!-- About Start -->
+        <!-- <div class="container mt-5" id="about">
+            <div class="container">
+                <div class="row g-5 align-items-center">
+                    <div class="col-lg-9 wow fadeInUp" data-wow-delay="0.1s">
+                        <h5 class="text-primary-gradient fw-medium">About App</h5>
+                        <h1 class="mb-4">#1 App For Your Fitness</h1>
+                        <p class="mb-4">Diam dolor diam ipsum et tempor sit. Aliqu diam amet diam et eos labore. Clita erat ipsum et lorem et sit, sed stet no labore lorem sit clita duo justo eirmod magna dolore erat amet</p>
+                        <div class="row g-4 mb-4">
+                            <div class="col-sm-9 wow fadeIn" data-wow-delay="0.5s">
+                                <div class="d-flex">
+                                    <i class="fa fa-cogs fa-2x text-primary-gradient flex-shrink-0 mt-1"></i>
+                                    <div class="ms-3">
+                                        <h2 class="mb-0 counter" data-toggle="counter-up">1234</h2>
+                                        <p class="text-primary-gradient mb-0">Active Install</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                    </div>
+                    <div class="col-lg-9">
+                        <img class="img-fluid wow fadeInUp" data-wow-delay="0.5s" src="{{ url('storage/public/home/PHX-App-Mockup-1.png') }}">
+                    </div>
+                </div>
+            </div>
+        </div> -->
+        <!-- About End -->
+
+        <!-- Download Start -->
+        <!-- <div id="download" class="container mt-5">
+            <div class="container">
+                <div class="row g-5 align-items-center">
+                    <div class="col-lg-9 first">
+                        <img class="img-fluid wow fadeInUp" data-wow-delay="0.1s" src="{{ url('storage/public/home/PHX-App-Mockup-2.png') }}">
+                    </div>
+                    <div class="col-lg-9 wow fadeInUp" data-wow-delay="0.3s">
+                        <h5 class="text-primary-gradient fw-medium">Download</h5>
+                        <h1 class="mb-4">Download The Latest Version Of Our App</h1>
+                        <p class="mb-4">Diam dolor diam ipsum et tempor sit. Aliqu diam amet diam et eos labore. Clita erat ipsum et lorem et sit, sed stet no labore lorem sit clita duo justo eirmod magna dolore erat amet</p>
+                        <div class="row g-4">
+                            <div class="col-sm-9 wow fadeIn" data-wow-delay="0.5s">
+                                <a href="#" class="d-flex bg-secondary-gradient rounded py-3 px-4">
+                                    <i class="fab fa-android fa-3x text-white flex-shrink-0"></i>
+                                    <div class="ms-3">
+                                        <p class="text-white mb-0">Available On</p>
+                                        <h5 class="text-white mb-0">Play Store</h5>
+                                    </div>
+                                </a>
+                            </div>           
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div> -->
+        <!-- Download End -->
+
+        <!-- Footer Start -->
+        <div class="container-fluid mt-5 bg-primary text-light footer wow fadeIn" data-wow-delay="0.1s">
+            <div class="container">
+                <div class="copyright">
+                    <div class="row">
+                        <div class="col-md-9 text-center text-md-start mb-3 mb-md-0">
+                            {!! setting('storefront_copyright_text') !!}
+                        </div>
+                        <div class="col-md-9 text-center text-md-end">
+                            <div class="footer-menu">
+                                @if ($footerMenuOne->isNotEmpty())
+                                    @foreach ($footerMenuOne as $menuItem)
+                                        <a href="{{ $menuItem->url() }}" target="{{ $menuItem->target }}">{{ $menuItem->name }}</a>
+                                    @endforeach
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Footer End -->
+
+        <!-- Back to Top -->
+        <div class="btn btn-lg btn-lg-square back-to-top pt-2"><i class="bi bi-arrow-up text-white"></i></div>
+        <!-- <a href="#" class="btn btn-lg btn-lg-square back-to-top pt-2"><i class="bi bi-arrow-up text-white"></i></a> -->
+    </div>
+@endsection
