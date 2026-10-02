@@ -262,7 +262,7 @@ class SellerController
             }
 
             // Send email to admin
-            $adminEmail = 'sangho.contact@gmail.com';
+            $adminEmail = 'admin@example.com';
             Mail::send('seller::admin.sellers.emails.seller_registration', ['seller' => $seller], function ($message) use ($adminEmail) {
                 $message->to($adminEmail)
                         ->subject('New Seller Registration');

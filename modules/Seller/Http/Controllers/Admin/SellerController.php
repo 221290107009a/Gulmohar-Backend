@@ -44,7 +44,7 @@ class SellerController
         $seller = Seller::create($request->all());
         
         // Send email to admin
-        $adminEmail = 'phxsolution@gmail.com';
+        $adminEmail = 'admin@example.com';
         Mail::send('seller::admin.sellers.emails.seller_registration', ['seller' => $seller], function ($message) use ($adminEmail) {
             $message->to($adminEmail)
                     ->subject('New Seller Registration');
@@ -81,7 +81,7 @@ class SellerController
             });
 
             // Send email to admin about status update
-            $adminEmail = 'phxsolution@gmail.com';
+            $adminEmail = 'admin@example.com';
             Mail::send('seller::admin.sellers.emails.status_update', [
                 'seller' => $seller,
                 'oldStatus' => $oldStatus

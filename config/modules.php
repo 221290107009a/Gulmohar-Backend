@@ -149,7 +149,7 @@ return [
         'vendor' => 'fleetcart',
         'author' => [
             'name' => 'Envay Soft',
-            'email' => 'envaysoft@gmail.com',
+            'email' => 'admin@example.com',
         ],
     ],
 

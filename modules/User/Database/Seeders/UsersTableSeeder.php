@@ -21,7 +21,7 @@ class UsersTableSeeder extends Seeder
         $envaySoft = User::create([
             'first_name' => 'Envay',
             'last_name' => 'Soft',
-            'email' => 'envaysoft@gmail.com',
+            'email' => 'admin@example.com',
             'password' => bcrypt(123456),
         ]);
 
