@@ -48,8 +48,98 @@ class OrderStatusController
     }
 
 
+    public static function restoreFootwearSizes(Order $order)
+    {
+        $handled = false;
+        if (!empty($order->note)) {
+            $data = json_decode($order->note, true);
+            if (is_array($data) && !empty($data['items'])) {
+                foreach ($data['items'] as $item) {
+                    $prodId = $item['product_id'] ?? ($item['id'] ?? null);
+                    $sizeStr = $item['size'] ?? ($item['selectedSize'] ?? null);
+                    $qty = (int)($item['quantity'] ?? ($item['qty'] ?? 1));
+
+                    if ($prodId && $sizeStr && $qty > 0) {
+                        $sizeRow = \Modules\Product\Entities\ProductSizeInventory::where('product_id', $prodId)
+                            ->where('size', $sizeStr)
+                            ->first();
+
+                        if ($sizeRow) {
+                            $sizeRow->increment('qty', $qty);
+                            $sizeRow->update(['in_stock' => true]);
+                        }
+
+                        $prod = \Modules\Product\Entities\Product::find($prodId);
+                        if ($prod) {
+                            if ($prod->manage_stock) {
+                                $prod->increment('qty', $qty);
+                            }
+                            $prod->update(['in_stock' => true]);
+                        }
+                    }
+                }
+                $handled = true;
+            }
+        }
+
+        if (!$handled && $order->products) {
+            foreach ($order->products as $orderProduct) {
+                if ($orderProduct->product) {
+                    if ($orderProduct->product->manage_stock) {
+                        $orderProduct->product->increment('qty', $orderProduct->qty);
+                    }
+                    $orderProduct->product->update(['in_stock' => true]);
+                }
+            }
+        }
+    }
+
+    public static function reduceFootwearSizes(Order $order)
+    {
+        if (!empty($order->note)) {
+            $data = json_decode($order->note, true);
+            if (is_array($data) && !empty($data['items'])) {
+                foreach ($data['items'] as $item) {
+                    $prodId = $item['product_id'] ?? ($item['id'] ?? null);
+                    $sizeStr = $item['size'] ?? ($item['selectedSize'] ?? null);
+                    $qty = (int)($item['quantity'] ?? ($item['qty'] ?? 1));
+
+                    if ($prodId && $sizeStr && $qty > 0) {
+                        $sizeRow = \Modules\Product\Entities\ProductSizeInventory::where('product_id', $prodId)
+                            ->where('size', $sizeStr)
+                            ->first();
+
+                        if ($sizeRow) {
+                            $newQty = max(0, $sizeRow->qty - $qty);
+                            $sizeRow->update([
+                                'qty' => $newQty,
+                                'in_stock' => $newQty > 0
+                            ]);
+                        }
+
+                        $hasAnyStock = \Modules\Product\Entities\ProductSizeInventory::where('product_id', $prodId)
+                            ->where('qty', '>', 0)
+                            ->exists();
+
+                        $prod = \Modules\Product\Entities\Product::find($prodId);
+                        if ($prod) {
+                            if ($prod->manage_stock && $prod->qty > 0) {
+                                $prod->decrement('qty', min($prod->qty, $qty));
+                            }
+                            if (!$hasAnyStock) {
+                                $prod->update(['in_stock' => false]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private function restoreStock(Order $order)
     {
+        self::restoreFootwearSizes($order);
+
         $order->products->each(function (OrderProduct $orderProduct) {
             if ($orderProduct->product_variant) {
                 if ($orderProduct->product_variant->manage_stock) {
@@ -74,6 +164,8 @@ class OrderStatusController
 
     private function reduceStock(Order $order)
     {
+        self::reduceFootwearSizes($order);
+
         $order->products->each(function (OrderProduct $orderProduct) {
             if ($orderProduct->product_variant) {
                 if (

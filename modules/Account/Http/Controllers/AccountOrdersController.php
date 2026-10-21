@@ -70,24 +70,56 @@ class AccountOrdersController
 
         $orders = $query->with('products.product.files')->get();
 
-        if ($orders->count() > 0) {
-            return response()->json([
-                'status'  => 'success',
-                'data'    => $orders,
-                'message' => 'Orders retrieved successfully'
-            ], 200);
-        } else {
+        return response()->json([
+            'status'  => 'success',
+            'data'    => $orders,
+            'message' => 'Orders retrieved successfully'
+        ], 200);
+    }
+
+    public function apiCancel($id)
+    {
+        $order = Order::where('id', $id)
+            ->orWhere('note', 'LIKE', '%"order_code":"' . $id . '"%')
+            ->first();
+
+        if (!$order) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Orders not found'
+                'message' => 'Order not found'
+            ], 404);
+        }
+
+        if (in_array($order->status, [Order::CANCELED, Order::REFUNDED])) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Order is already canceled'
             ], 400);
         }
+
+        if (in_array($order->status, [Order::PROCESSING, Order::COMPLETED])) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Order is already in processing and cannot be canceled'
+            ], 400);
+        }
+
+        // Restore sizes and stock
+        \Modules\Order\Http\Controllers\Admin\OrderStatusController::restoreFootwearSizes($order);
+
+        $order->update(['status' => Order::CANCELED]);
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Order canceled successfully and stock restored'
+        ], 200);
     }
 
     public function apiShow($id)
     {
         if (isset($id) && $id != null) {            
             $order = Order::where('id', $id)
+                    ->orWhere('note', 'LIKE', '%"order_code":"' . $id . '"%')
                     ->with(['products.product.files'])
                     ->first();
             

@@ -54,7 +54,19 @@ abstract class BaseAuthController extends Controller
     {
         $this->auth = $auth;
 
-        $this->middleware('guest')->except('getLogout');
+        $this->middleware('guest')->except([
+            'getLogout',
+            'apiRegister',
+            'apiSaveUserDetails',
+            'apiGenerateWebRegistrationOtp',
+            'apiVerifyWebRegistrationOtp',
+            'apiRegisterVerified',
+            'apiWebLogin',
+            'apiWebLogout',
+            'apiSendWebPasswordResetOtp',
+            'apiVerifyWebPasswordResetOtp',
+            'apiCompleteWebPasswordReset',
+        ]);
     }
 
 
@@ -294,14 +306,8 @@ abstract class BaseAuthController extends Controller
                     Activation::complete($user, Activation::create($user)->code);
                 }
                 $requestData['user_id'] = $user->id;
-                $message = '';
-                if($requestData['email'] == 'sanghotester@gmail.com'){
-                    $requestData['code'] = '123456';
-                    $message = "Please enter OTP 123456 for testing purpose";
-                } else{
-                    $requestData['code'] = sprintf('%06d', rand(0, 999999));
-                    $message = "OTP has been sent to your email.";
-                }
+                $requestData['code'] = sprintf('%06d', random_int(0, 999999));
+                    $message = 'OTP has been sent to your email.';
                 $otpVerification = OtpVerification::create($requestData);
                 Mail::to($user->email)->send(new EmailOtpSend($otpVerification->code));
                 return response()->json([
@@ -382,6 +388,282 @@ abstract class BaseAuthController extends Controller
         ]);
     }
 
+    public function apiGenerateWebRegistrationOtp(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        if (User::where('email', $validated['email'])->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'An account with this email already exists.',
+            ], 409);
+        }
+
+        OtpVerification::where('email', $validated['email'])->delete();
+        $code = sprintf('%06d', random_int(0, 999999));
+        OtpVerification::create([
+            'email' => $validated['email'],
+            'code' => $code,
+        ]);
+
+        Mail::to($validated['email'])->send(new EmailOtpSend($code));
+
+        return response()->json([
+            'success' => true,
+            'message' => 'OTP has been sent to your email.',
+        ]);
+    }
+
+    public function apiVerifyWebRegistrationOtp(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+            'code' => ['required', 'digits:6'],
+        ]);
+
+        if (User::where('email', $validated['email'])->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'An account with this email already exists.',
+            ], 409);
+        }
+
+        $otp = OtpVerification::where('email', $validated['email'])
+            ->where('code', $validated['code'])
+            ->where('created_at', '>=', now()->subMinutes(10))
+            ->latest()
+            ->first();
+
+        if (!$otp) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or expired OTP.',
+            ], 422);
+        }
+
+        return response()->json(['success' => true]);
+    }
+
+    public function apiRegisterVerified(Request $request)
+    {
+        $validated = $request->validate([
+            'first_name' => ['required', 'string', 'max:255'],
+            'last_name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'unique:users,email'],
+            'phone' => ['required', 'string', 'max:255', 'unique:users,phone'],
+            'password' => ['required', 'string', 'min:6'],
+            'otp_code' => ['required', 'digits:6'],
+            'referrer_code' => ['nullable', 'string', 'max:250'],
+            'share_source' => ['nullable', 'string', 'max:50'],
+        ]);
+
+        $user = DB::transaction(function () use ($validated) {
+            $otp = OtpVerification::where('email', $validated['email'])
+                ->where('code', $validated['otp_code'])
+                ->where('created_at', '>=', now()->subMinutes(10))
+                ->lockForUpdate()
+                ->first();
+
+            if (!$otp
+                || User::where('email', $validated['email'])->exists()
+                || User::where('phone', $validated['phone'])->exists()) {
+                return null;
+            }
+
+            $user = User::create([
+                'first_name' => $validated['first_name'],
+                'last_name' => $validated['last_name'],
+                'fullname' => trim($validated['first_name'] . ' ' . $validated['last_name']),
+                'email' => $validated['email'],
+                'phone' => $validated['phone'],
+                'password' => app('sentinel.hasher')->hash($validated['password']),
+                'registration_type' => 'web',
+            ]);
+            $user->roles()->attach(2);
+            Activation::complete($user, Activation::create($user)->code);
+
+            do {
+                $referralCode = strtoupper(\Illuminate\Support\Str::random(8));
+            } while (User::where('referral_code', $referralCode)->exists());
+            $user->referral_code = $referralCode;
+            $user->save();
+
+            if (!empty($validated['referrer_code'])) {
+                $referrer = User::where('referral_code', $validated['referrer_code'])->first();
+                if ($referrer && (int) $referrer->id !== (int) $user->id) {
+                    $shareSource = $validated['share_source'] ?? 'web';
+                    $shareSource = $shareSource === 'product-share'
+                        ? 'store'
+                        : ($shareSource === 'account-share' ? 'web' : substr($shareSource, 0, 10));
+
+                    ReferralUsage::firstOrCreate(
+                        ['referred_user_id' => $user->id],
+                        [
+                            'referral_code' => $referrer->referral_code,
+                            'referrer_id' => $referrer->id,
+                            'reward_point' => 100,
+                            'referral_share_type' => $shareSource,
+                        ]
+                    );
+                }
+            }
+
+            $otp->delete();
+
+            return $user;
+        });
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid OTP or account already exists.',
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'user_id' => $user->id,
+                'referral_code' => $user->referral_code,
+                'access_token' => $user->createToken('gulmohar-web', ['*'], now()->addDays(30))->plainTextToken,
+                'first_name' => $user->first_name,
+                'last_name' => $user->last_name,
+                'phone' => $user->phone,
+            ],
+        ]);
+    }
+
+    public function apiWebLogin(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+            'password' => ['required', 'string'],
+        ]);
+
+        $user = User::where('email', $validated['email'])->first();
+        if (!$user || !app('sentinel.hasher')->check($validated['password'], $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The email or password is incorrect.',
+            ], 401);
+        }
+
+        if (!$user->referral_code) {
+            do {
+                $user->referral_code = strtoupper(\Illuminate\Support\Str::random(8));
+            } while (User::where('referral_code', $user->referral_code)->where('id', '!=', $user->id)->exists());
+            $user->save();
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'user_id' => $user->id,
+                'referral_code' => $user->referral_code,
+                'access_token' => $user->createToken('gulmohar-web', ['*'], now()->addDays(30))->plainTextToken,
+                'first_name' => $user->first_name,
+                'last_name' => $user->last_name,
+                'phone' => $user->phone,
+            ],
+        ]);
+    }
+
+    public function apiWebLogout(Request $request)
+    {
+        $request->user()?->currentAccessToken()?->delete();
+
+        return response()->json(['success' => true]);
+    }
+
+    public function apiSendWebPasswordResetOtp(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        $user = User::where('email', $validated['email'])->first();
+        if ($user) {
+            OtpVerification::where('email', $user->email)->delete();
+            $code = sprintf('%06d', random_int(0, 999999));
+            $otp = OtpVerification::create([
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'code' => $code,
+            ]);
+
+            Mail::to($user->email)->send(new EmailOtpSend($otp->code));
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'If an account exists for this email, a reset code has been sent.',
+        ]);
+    }
+
+    public function apiVerifyWebPasswordResetOtp(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+            'code' => ['required', 'digits:6'],
+        ]);
+
+        $validCode = User::where('email', $validated['email'])->exists()
+            && OtpVerification::where('email', $validated['email'])
+                ->where('code', $validated['code'])
+                ->where('created_at', '>=', now()->subMinutes(10))
+                ->exists();
+
+        if (!$validCode) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or expired reset code.',
+            ], 422);
+        }
+
+        return response()->json(['success' => true]);
+    }
+
+    public function apiCompleteWebPasswordReset(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+            'code' => ['required', 'digits:6'],
+            'new_password' => ['required', 'string', 'min:6', 'same:new_password_confirmation'],
+            'new_password_confirmation' => ['required', 'string'],
+        ]);
+
+        $updated = DB::transaction(function () use ($validated) {
+            $user = User::where('email', $validated['email'])->lockForUpdate()->first();
+            $otp = OtpVerification::where('email', $validated['email'])
+                ->where('code', $validated['code'])
+                ->where('created_at', '>=', now()->subMinutes(10))
+                ->lockForUpdate()
+                ->first();
+
+            if (!$user || !$otp) {
+                return false;
+            }
+
+            $user->password = app('sentinel.hasher')->hash($validated['new_password']);
+            $user->save();
+            OtpVerification::where('email', $validated['email'])->delete();
+            $user->tokens()->delete();
+
+            return true;
+        });
+
+        if (!$updated) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or expired reset code.',
+            ], 422);
+        }
+
+        return response()->json(['success' => true]);
+    }
+
     public function apiRegister(Request $request)
     {    
         $existingUser = $user = $user_type = '';
@@ -449,7 +731,7 @@ abstract class BaseAuthController extends Controller
                 }                
                 if ($user->referral_code == '') {
                     do {
-                        $referralCode = strtoupper(substr(str_shuffle('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'), 0, 5));
+                        $referralCode = strtoupper(\Illuminate\Support\Str::random(8));
                     } while (User::where('referral_code', $referralCode)->exists());
                     
                     $requestData['referral_code'] = $referralCode;
@@ -504,16 +786,20 @@ abstract class BaseAuthController extends Controller
                     }
                 }
 
-                if(isset($requestData['referrer_code']) && $requestData['referrer_code']){
+                if (!empty($requestData['referrer_code'])) {
                     $referrerUser = User::where('referral_code', $requestData['referrer_code'])->first();
-                    
-                    if ($referrerUser) {
+
+                    if ($referrerUser
+                        && (int) $referrerUser->id !== (int) $user->id
+                        && !ReferralUsage::where('referred_user_id', $user->id)->exists()) {
+                        $shareSource = $requestData['share_source'] ?? 'web';
+                        $shareSource = $shareSource === 'product-share' ? 'store' : ($shareSource === 'account-share' ? 'web' : substr($shareSource, 0, 10));
                         ReferralUsage::create([
                             'referral_code' => $requestData['referrer_code'],
                             'referrer_id' => $referrerUser->id,
                             'referred_user_id' => $user->id,
                             'reward_point' => 100,
-                            'referral_share_type' => $requestData['share_source'] ?? 'web',
+                            'referral_share_type' => $shareSource,
                         ]);
                     }
                 }
@@ -522,6 +808,7 @@ abstract class BaseAuthController extends Controller
                     "success" => true,
                     "data" => [
                         "user_id" => $user->id,
+                        "referral_code" => $user->referral_code,
                     ]
                 ]);
             } else {
@@ -861,12 +1148,10 @@ abstract class BaseAuthController extends Controller
      */
     public function showReferralPage($referralCode, $shareSource)
     {
-        
         $utmSource = 'app_share';
         $utmMedium = 'user_referral';
-        $utmCampaign = $shareSource.'_'.'screen';
-    
-        
+        $utmCampaign = $shareSource . '_screen';
+
         $referrerParams = http_build_query([
             'utm_source' => $utmSource,
             'utm_medium' => $utmMedium,
@@ -874,17 +1159,23 @@ abstract class BaseAuthController extends Controller
             'referral' => $referralCode,
             'share_source' => $shareSource
         ]);
-        
-        $applicationId = 'sangho.app';
-        
-        $deepLinkUrl = "sangho://app/referral/{$referralCode}/share_source/{$shareSource}";
-        
-        $playStoreUrl = "https://play.google.com/store/apps/details?id={$applicationId}&referrer=" . urlencode($referrerParams);
-        
+
+        $applicationId = config('app.mobile_app_id');
+        $scheme = config('app.mobile_app_scheme');
+        $deepLinkUrl = $applicationId && $scheme
+            ? "{$scheme}://app/referral/{$referralCode}/share_source/{$shareSource}"
+            : null;
+        $playStoreUrl = $applicationId
+            ? "https://play.google.com/store/apps/details?id={$applicationId}&referrer=" . urlencode($referrerParams)
+            : null;
+
         $logo = $this->getMedia(setting('storefront_header_logo'));
 
-        $webUrl = env('WEB_APP_URL', 'https://sangho-app-next.vercel.app');
-        $webRedirectUrl = rtrim($webUrl, '/') . "/referral/{$referralCode}?share_source={$shareSource}";
+        $webUrl = rtrim((string) config('app.web_app_url'), '/');
+        $webRedirectUrl = ($webUrl ? $webUrl . '/register' : url('/register')) . '?' . http_build_query([
+            'ref' => $referralCode,
+            'source' => $shareSource,
+        ]);
 
         return view('user::referral', [
             'deepLinkUrl' => $deepLinkUrl,

@@ -122,7 +122,7 @@ class CheckoutController extends Controller
     }
 
 
-    public function apiStore(Request $request,OrderService $orderService)
+    public function apiStore(Request $request, ?OrderService $orderService = null)
     {
         $customerId = $request->user_id ?? $request->customer_id;
         if ($customerId) {
@@ -146,32 +146,110 @@ class CheckoutController extends Controller
             }
         }
 
-        if ($request->has('items') && is_array($request->items)) {
-            foreach ($request->items as $item) {
-                $productId = $item['product_id'] ?? ($item['id'] ?? null);
-                $sizeStr = $item['size'] ?? ($item['selectedSize'] ?? null);
-                $qtyToDeduct = (int)($item['quantity'] ?? ($item['qty'] ?? 1));
+        if (Cart::instance()->isEmpty()) {
+            $firstName = $request->first_name ?? '';
+            $lastName = $request->last_name ?? '';
+            if (!$firstName && $request->recipientName) {
+                $parts = explode(' ', trim($request->recipientName));
+                $firstName = $parts[0] ?? 'Customer';
+                $lastName = count($parts) > 1 ? implode(' ', array_slice($parts, 1)) : '';
+            }
+            if (!$firstName) $firstName = 'Valued';
+            if (!$lastName) $lastName = 'Customer';
 
-                if ($productId && $sizeStr && $qtyToDeduct > 0) {
-                    $sizeRow = \Modules\Product\Entities\ProductSizeInventory::where('product_id', $productId)
-                        ->where('size', $sizeStr)
-                        ->first();
+            $total = (float)($request->total ?? 0);
+            $subTotal = (float)($request->subtotal ?? $total);
 
-                    if ($sizeRow) {
-                        $newQty = max(0, $sizeRow->qty - $qtyToDeduct);
-                        $sizeRow->update([
-                            'qty' => $newQty,
-                            'in_stock' => $newQty > 0
+            $noteData = json_encode([
+                'order_code' => $request->orderId ?? ('GM-' . ($request->user_id ?? 1) . '-' . time()),
+                'items' => $request->items ?? [],
+            ]);
+
+            $order = \Modules\Order\Entities\Order::create([
+                'customer_id' => $request->user_id ?? ($request->customer_id ?? null),
+                'customer_email' => $request->email ?? ($request->customer_email ?? ''),
+                'customer_phone' => $request->phone ?? ($request->customer_phone ?? ''),
+                'customer_first_name' => $firstName,
+                'customer_last_name' => $lastName,
+                'billing_first_name' => $firstName,
+                'billing_last_name' => $lastName,
+                'billing_address_1' => $request->address ?? ($request->street ?? ''),
+                'billing_city' => $request->city ?? '',
+                'billing_state' => $request->state ?? '',
+                'billing_zip' => $request->pincode ?? '',
+                'billing_country' => 'IN',
+                'shipping_first_name' => $firstName,
+                'shipping_last_name' => $lastName,
+                'shipping_address_1' => $request->address ?? ($request->street ?? ''),
+                'shipping_city' => $request->city ?? '',
+                'shipping_state' => $request->state ?? '',
+                'shipping_zip' => $request->pincode ?? '',
+                'shipping_country' => 'IN',
+                'sub_total' => $subTotal,
+                'shipping_method' => 'Free Delivery',
+                'shipping_cost' => 0,
+                'discount' => 0,
+                'total' => $total,
+                'payment_method' => $request->paymentMethod ?? ($request->payment_method ?? 'cod'),
+                'currency' => 'INR',
+                'currency_rate' => 1,
+                'locale' => 'en',
+                'status' => 'pending',
+                'note' => $noteData,
+            ]);
+
+            if ($request->has('items') && is_array($request->items)) {
+                foreach ($request->items as $item) {
+                    $prodId = $item['product_id'] ?? ($item['id'] ?? null);
+                    $price = (float)($item['price'] ?? 0);
+                    $qty = (int)($item['quantity'] ?? ($item['qty'] ?? 1));
+                    $sizeStr = $item['size'] ?? ($item['selectedSize'] ?? null);
+
+                    if ($prodId) {
+                        \Modules\Order\Entities\OrderProduct::create([
+                            'order_id' => $order->id,
+                            'product_id' => $prodId,
+                            'unit_price' => $price,
+                            'qty' => $qty,
+                            'line_total' => $price * $qty,
                         ]);
+
+                        if ($sizeStr && $qty > 0) {
+                            $sizeRow = \Modules\Product\Entities\ProductSizeInventory::where('product_id', $prodId)
+                                ->where('size', $sizeStr)
+                                ->first();
+
+                            if ($sizeRow) {
+                                $newQty = max(0, $sizeRow->qty - $qty);
+                                $sizeRow->update([
+                                    'qty' => $newQty,
+                                    'in_stock' => $newQty > 0
+                                ]);
+                            }
+
+                            $hasAnyStock = \Modules\Product\Entities\ProductSizeInventory::where('product_id', $prodId)
+                                ->where('qty', '>', 0)
+                                ->exists();
+
+                            $prod = \Modules\Product\Entities\Product::find($prodId);
+                            if ($prod) {
+                                if ($prod->manage_stock && $prod->qty > 0) {
+                                    $prod->decrement('qty', min($prod->qty, $qty));
+                                }
+                                if (!$hasAnyStock) {
+                                    $prod->update(['in_stock' => false]);
+                                }
+                            }
+                        }
                     }
                 }
             }
-        }
 
-        if (Cart::instance()->isEmpty()) {
             return response()->json([
                 'status' => true,
                 'message' => 'Order placed successfully',
+                'order_id' => $order->id,
+                'order' => $order,
             ]);
         } else {            
             $order = $orderService->create($request);

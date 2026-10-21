@@ -62,6 +62,12 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    'web_app_url' => env('WEB_APP_URL'),
+
+    'mobile_app_id' => env('MOBILE_APP_ID'),
+
+    'mobile_app_scheme' => env('MOBILE_APP_SCHEME'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

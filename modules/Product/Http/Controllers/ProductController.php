@@ -210,7 +210,7 @@ class ProductController extends Controller
                     $query->latest();
                 }
             }
-            $products = $query->with('translations', 'attributes.attribute.attributeSet', 'sellers', 'reviews', 'relatedProducts', 'upSellProducts', 'crossSellProducts', 'variants', 'sizeInventory')->get();
+            $products = $query->with('translations', 'categories', 'attributes.attribute.attributeSet', 'sellers', 'reviews', 'relatedProducts', 'upSellProducts', 'crossSellProducts', 'variants', 'sizeInventory')->get();
             
             foreach($products as $product){
                 if (request()->filled('user_id')) {
@@ -311,7 +311,7 @@ class ProductController extends Controller
                     $query->latest();
                 }
             }
-            $products = $query->with('translations', 'attributes.attribute.attributeSet', 'sellers', 'reviews', 'relatedProducts', 'upSellProducts', 'crossSellProducts', 'variants', 'sizeInventory')->get();
+            $products = $query->with('translations', 'categories', 'attributes.attribute.attributeSet', 'sellers', 'reviews', 'relatedProducts', 'upSellProducts', 'crossSellProducts', 'variants', 'sizeInventory')->get();
             
             foreach ($products as $product) {
                 if ($product->sizeInventory && $product->sizeInventory->isNotEmpty()) {
@@ -876,22 +876,23 @@ class ProductController extends Controller
      */
     public function getProductShareUrl($idOrSlug, $referralCode)
     {
-        $product = Product::where('id', $idOrSlug)
-            ->orWhere('slug', $idOrSlug)
-            ->where('is_active', true)
-            ->first();
+        $product = Product::where(function ($query) use ($idOrSlug) {
+            $query->where('id', $idOrSlug)->orWhere('slug', $idOrSlug);
+        })->where('is_active', true)->first();
+
+        $webUrl = rtrim((string) config('app.web_app_url'), '/');
 
         $utmSource = $referralCode;
         $utmMedium = 'user_referral';
         $utmCampaign = 'product_share';
-        $applicationId = 'sangho.app';
-        $scheme = 'sangho';
+        $applicationId = config('app.mobile_app_id');
+        $scheme = config('app.mobile_app_scheme');
 
         // Deep link path and URL for mobile app
         $deepLinkPath = $product
             ? "app/referral/{$referralCode}/share_source/store/product/{$product->id}"
             : "app/referral/{$referralCode}/share_source/store";
-        $deepLinkUrl = "{$scheme}://{$deepLinkPath}";
+        $deepLinkUrl = $applicationId && $scheme ? "{$scheme}://{$deepLinkPath}" : null;
 
         // Referrer parameters to track in Play Store
         $referrerData = [
@@ -907,20 +908,28 @@ class ProductController extends Controller
         }
 
         $referrerParams = http_build_query($referrerData);
-        $playStoreUrl = "https://play.google.com/store/apps/details?id={$applicationId}&referrer=" . urlencode($referrerParams);
+        $playStoreUrl = $applicationId
+            ? "https://play.google.com/store/apps/details?id={$applicationId}&referrer=" . urlencode($referrerParams)
+            : null;
 
         if (!$product) {
-            return redirect($playStoreUrl);
+            return $playStoreUrl
+                ? redirect($playStoreUrl)
+                : redirect(($webUrl ?: url('/products')) . '?' . http_build_query(['ref' => $referralCode]));
         }
 
-        // Smart Android Intent link with fallback
-        $currentUrlWithFallback = request()->fullUrlWithQuery(['fallback' => 1]);
-        $intentUrl = "intent://{$deepLinkPath}#Intent;scheme={$scheme};package={$applicationId};S.browser_fallback_url=" . urlencode($currentUrlWithFallback) . ";end";
+        $intentUrl = null;
+        if ($applicationId && $scheme) {
+            $currentUrlWithFallback = request()->fullUrlWithQuery(['fallback' => 1]);
+            $intentUrl = "intent://{$deepLinkPath}#Intent;scheme={$scheme};package={$applicationId};S.browser_fallback_url=" . urlencode($currentUrlWithFallback) . ";end";
+        }
 
         $logo = $this->getMedia(setting('storefront_header_logo'));
 
-        $webUrl = env('WEB_APP_URL', 'https://sangho-app-next.vercel.app');
-        $webRedirectUrl = rtrim($webUrl, '/') . "/online-store/product/{$product->slug}?ref={$referralCode}&source=product-share";
+        $webRedirectUrl = ($webUrl ?: url('/products')) . ($webUrl ? '/product/' : '/') . rawurlencode($product->slug) . '?' . http_build_query([
+            'ref' => $referralCode,
+            'source' => 'product-share',
+        ]);
 
         // Format cover image
         $coverImage = null;

@@ -3,11 +3,11 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ $productData['title'] }} - Sangho App</title>
+    <title>{{ $productData['title'] }} - Gulmohar Footwear</title>
     
     <!-- Open Graph Meta Tags for Social Preview -->
-    <meta property="og:title" content="{{ $productData['title'] }} - Sangho App">
-    <meta property="og:description" content="{{ \Illuminate\Support\Str::limit(strip_tags($productData['description'] ?? ''), 150) ?: 'View this product on Sangho App.' }}">
+    <meta property="og:title" content="{{ $productData['title'] }} - Gulmohar Footwear">
+    <meta property="og:description" content="{{ \Illuminate\Support\Str::limit(strip_tags($productData['description'] ?? ''), 150) ?: 'View this product on Gulmohar Footwear.' }}">
     @if(!empty($productData['coverImage']))
         <meta property="og:image" content="{{ $productData['coverImage'] }}">
     @endif
@@ -16,7 +16,7 @@
 
     <!-- Twitter Card Meta Tags -->
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="{{ $productData['title'] }} - Sangho App">
+    <meta name="twitter:title" content="{{ $productData['title'] }} - Gulmohar Footwear">
     <meta name="twitter:description" content="{{ \Illuminate\Support\Str::limit(strip_tags($productData['description'] ?? ''), 150) }}">
     @if(!empty($productData['coverImage']))
         <meta name="twitter:image" content="{{ $productData['coverImage'] }}">
@@ -305,9 +305,9 @@
     <div class="container">
         <div class="header">
             @if(isset($logo) && $logo && $logo->path)
-                <img src="{{ $logo->path }}" alt="Sangho Logo">
+                <img src="{{ $logo->path }}" alt="Gulmohar Footwear Logo">
             @endif
-            <h1>Sangho</h1>
+            <h1>Gulmohar Footwear</h1>
         </div>
         
         <div class="content-preview">
@@ -327,10 +327,11 @@
 
         <div id="loading-state" class="loader-container">
             <div class="loader"></div>
-            <div class="loader-text">Opening in App...</div>
+            <div class="loader-text">{{ $intentUrl ? 'Opening in App...' : 'Loading product...' }}</div>
         </div>
 
         <div id="action-state">
+            @if($playStoreUrl)
             <a href="{{ $playStoreUrl }}" class="btn playstore-btn">
                 <img src="{{ asset('build/assets/google_play.svg') }}" alt="Google Play" class="play-store-icon">
                 <div class="playstore-text">
@@ -338,19 +339,20 @@
                     <span class="large">Google Play</span>
                 </div>
             </a>
+            @endif
             
-            <div class="divider">Or</div>
+            @if($playStoreUrl)<div class="divider">Or</div>@endif
             
             <a href="{{ $webRedirectUrl }}" class="btn btn-outline">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1 4-10z"></path></svg>
-                Continue on Web
+                View product on Gulmohar
             </a>
         </div>
     </div>
     
     <script>
-        var deepLinkUrl = "{{ $deepLinkUrl }}";
-        var intentUrl = "{!! $intentUrl !!}";
+        var deepLinkUrl = @json($deepLinkUrl);
+        var intentUrl = @json($intentUrl);
         
         var urlParams = new URLSearchParams(window.location.search);
         var isFallback = urlParams.get('fallback') === '1';
@@ -360,7 +362,7 @@
         var isIOS = /ipad|iphone|ipod/i.test(userAgent.toLowerCase());
         var isMobile = isAndroid || isIOS;
         
-        if (isMobile && !isFallback) {
+        if (isMobile && deepLinkUrl && intentUrl && !isFallback) {
             if (isAndroid) {
                 window.location.replace(intentUrl);
             } else {

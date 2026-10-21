@@ -43,7 +43,7 @@
                 { data: 'id', width: '5%' },
                 { data: 'thumbnail', orderable: false, searchable: false, width: '10%' },
                 { data: 'name', name: 'translations.name', class: 'name', orderable: false, defaultContent: '' },
-                { data: 'seller_name', name: 'translations.name', class: 'name', orderable: false, defaultContent: '' },
+                { data: 'category', orderable: false, defaultContent: '-' },
                 { data: 'price', searchable: false },
                 { data: 'status', name: 'is_active', searchable: false },
                 { data: 'updated', name: 'updated_at' },

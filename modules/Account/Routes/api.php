@@ -11,6 +11,7 @@ Route::middleware('api_key')->group(function () {
 
     Route::post('orders', [AccountOrdersController::class, 'apiIndex']);
     Route::get('orders/{id}', [AccountOrdersController::class, 'apiShow']);
+    Route::post('orders/{id}/cancel', [AccountOrdersController::class, 'apiCancel']);
 
     // Route::get('account/downloads', [AccountDownloadsController::class, 'apiIndex']);
     // Route::get('account/downloads/{id}', [AccountDownloadsController::class, 'apiShow']);

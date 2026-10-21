@@ -141,6 +141,9 @@ class CategoryController
     {
         try {
             $categories = Category::with('translations')
+                ->withCount(['products' => function($q) {
+                    $q->withoutGlobalScope('active')->where('is_active', 1);
+                }])
                 ->where('is_active', 1)
                 ->get();
 
@@ -155,6 +158,7 @@ class CategoryController
                     'position' => $category->position,
                     'is_searchable' => $category->is_searchable,
                     'is_active' => $category->is_active,
+                    'products_count' => (int) $category->products_count,
                     'logo' => optional($category->logo)->path,
                     'banner' => optional($category->banner)->path,
                     'children' => []

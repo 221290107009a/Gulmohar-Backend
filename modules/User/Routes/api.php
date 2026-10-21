@@ -14,6 +14,14 @@ Route::post('api_register', [AuthController::class, 'apiPostRegister']);
 Route::post('api_login', [AuthController::class, 'apiPostLogin']);
 
 Route::middleware(['api_key'])->group(function() {
+    Route::post('web-register/send-otp', [AuthController::class, 'apiGenerateWebRegistrationOtp'])->middleware('throttle:5,1');
+    Route::post('web-register/verify-otp', [AuthController::class, 'apiVerifyWebRegistrationOtp'])->middleware('throttle:10,1');
+    Route::post('web-register/complete', [AuthController::class, 'apiRegisterVerified'])->middleware('throttle:5,1');
+    Route::post('web-login', [AuthController::class, 'apiWebLogin'])->middleware('throttle:5,1');
+    Route::post('web-logout', [AuthController::class, 'apiWebLogout'])->middleware('auth:sanctum');
+    Route::post('web-password/send-otp', [AuthController::class, 'apiSendWebPasswordResetOtp'])->middleware('throttle:5,1');
+    Route::post('web-password/verify-otp', [AuthController::class, 'apiVerifyWebPasswordResetOtp'])->middleware('throttle:10,1');
+    Route::post('web-password/reset', [AuthController::class, 'apiCompleteWebPasswordReset'])->middleware('throttle:5,1');
     Route::post('send-email-otp', [AuthController::class, 'apiGenerateOtp']);
     Route::post('verify-email-otp', [AuthController::class, 'apiVerifyEmailOtp']);
     Route::post('register', [AuthController::class, 'apiRegister']);

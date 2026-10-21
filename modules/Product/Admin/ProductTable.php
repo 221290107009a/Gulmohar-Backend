@@ -29,8 +29,9 @@ class ProductTable extends AdminTable
                     'file' => ($product->variant && $product->variant->base_image->id) ? $product->variant->base_image : $product->base_image,
                 ]);
             })
-            ->editColumn('seller_name', function ($product) {
-                return $product->sellers[0]->shop_name ?? '';
+            ->editColumn('category', function ($product) {
+                $categories = $product->categories->pluck('name')->filter();
+                return $categories->isNotEmpty() ? $categories->implode(', ') : '-';
             })
             ->editColumn('price', function (Product $product) {
                 return product_price_formatted($product->variant ?? $product, function ($price, $specialPrice) use ($product) {

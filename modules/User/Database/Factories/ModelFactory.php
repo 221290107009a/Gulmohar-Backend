@@ -8,6 +8,6 @@ $factory->define(User::class, function (Generator $faker) {
         'first_name' => $faker->firstName,
         'last_name' => $faker->lastName,
         'email' => $faker->safeEmail,
-        'password' => bcrypt(123456),
+        'password' => bcrypt($faker->password(12, 32)),
     ];
 });

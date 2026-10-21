@@ -6,15 +6,15 @@
     
     if ($shareSource === 'quote-share') {
         $displayTitle = $title ?? '✨ Shared Shrestha Vichar Templates';
-        $displayDesc = $description ?? 'Open the Sangho App to view Daily Shrestha Vichar Templates. Add your photo, and share inspiration with your friends and family.';
-        $metaTitle = 'Sangho App - ' . $displayTitle;
+        $displayDesc = $description ?? 'Share Gulmohar Footwear with friends and explore handcrafted footwear together.';
+        $metaTitle = 'Gulmohar Footwear - ' . $displayTitle;
         $badgeText = 'Quote Shared';
         $badgeColor = '#8b5cf6';
         $badgeBg = '#ede9fe';
     } else {
-        $displayTitle = $title ?? '✨ You\'re Invited To Join Sangho App!';
-        $displayDesc = $description ?? 'Join India\'s growing community app! Explore trending posts, connect with like-minded people, and create beautiful personalized content to share.';
-        $metaTitle = 'Sangho App - ' . $displayTitle;
+        $displayTitle = $title ?? 'You\'re invited to Gulmohar Footwear';
+        $displayDesc = $description ?? 'Explore handcrafted footwear and share your favorite styles with friends.';
+        $metaTitle = 'Gulmohar Footwear - ' . $displayTitle;
         $badgeText = 'App Invite';
         $badgeColor = '#3b82f6';
         $badgeBg = '#eff6ff';
@@ -326,9 +326,9 @@
     <div class="container">
         <div class="header">
             @if(isset($logo) && $logo && $logo->path)
-                <img src="{{ $logo->path }}" alt="Sangho Logo">
+                <img src="{{ $logo->path }}" alt="Gulmohar Footwear Logo">
             @endif
-            <h1>Sangho</h1>
+            <h1>Gulmohar Footwear</h1>
         </div>
         
         <div class="content-preview">
@@ -336,10 +336,10 @@
             @if(isset($image) && $image)
                 <img src="{{ $image }}" alt="Preview" class="preview-image">
             @elseif(isset($logo) && $logo && $logo->path)
-                <img src="{{ $logo->path }}" alt="Sangho App Logo" class="preview-image logo-fallback">
+                <img src="{{ $logo->path }}" alt="Gulmohar Footwear Logo" class="preview-image logo-fallback">
             @else
                 <div class="preview-image logo-fallback" style="display:flex;align-items:center;justify-content:center;background:#f3f4f6;">
-                    <span style="color:#9ca3af;font-size:14px;font-weight:500;">Sangho App</span>
+                    <span style="color:#9ca3af;font-size:14px;font-weight:500;">Gulmohar Footwear</span>
                 </div>
             @endif
             
@@ -351,10 +351,11 @@
 
         <div id="loading-state" class="loader-container">
             <div class="loader"></div>
-            <div class="loader-text">Opening in App...</div>
+            <div class="loader-text">{{ $deepLinkUrl ? 'Opening in App...' : 'Loading referral link...' }}</div>
         </div>
 
         <div id="action-state">
+            @if($playStoreUrl)
             <a href="{{ $playStoreUrl }}" class="btn playstore-btn">
                 <img src="{{ asset('build/assets/google_play.svg') }}" alt="Google Play" class="play-store-icon">
                 <div class="playstore-text">
@@ -362,25 +363,26 @@
                     <span class="large">Google Play</span>
                 </div>
             </a>
+            @endif
             
-            <div class="divider">Or</div>
+            @if($playStoreUrl)<div class="divider">Or</div>@endif
             
             <a href="{{ $webRedirectUrl }}" class="btn btn-outline">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-                Continue on Web
+                Continue to Gulmohar
             </a>
         </div>
     </div>
     
     <script>
         // The deep link URL for the mobile app
-        var deepLinkUrl = "{{ $deepLinkUrl }}";
+        var deepLinkUrl = @json($deepLinkUrl);
         
         // Mobile platform detection
         var userAgent = navigator.userAgent || navigator.vendor || window.opera;
         var isMobile = /android|ipad|iphone|ipod/i.test(userAgent.toLowerCase());
         
-        if (isMobile) {
+        if (isMobile && deepLinkUrl) {
             // Attempt to open the app via deep link
             window.location.href = deepLinkUrl;
 

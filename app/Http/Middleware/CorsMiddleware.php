@@ -25,16 +25,14 @@ class CorsMiddleware
 
             // Define allowed origins
             $allowedOrigins = [
-                'https://sanghoapp.phxsolution.com',       
-                'https://sanghostage.phxsolution.com',
-                'https://www.sangho.app',
-                'https://sangho.app',
                 'http://localhost:3000',
-                'https://sangho-app-next.vercel.app',
-                'http://43.205.208.46:3000',
-                'http://sangho-backend.local',
-                'https://web.sangho.app'
+                'http://localhost:3001',
+                'http://127.0.0.1:3001',
             ];
+            $webAppUrl = rtrim((string) config('app.web_app_url'), '/');
+            if ($webAppUrl !== '') {
+                $allowedOrigins[] = $webAppUrl;
+            }
 
             // Get the Origin header from the request
             $origin = $request->headers->get('Origin');
@@ -45,7 +43,7 @@ class CorsMiddleware
             }
 
             $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-            $response->headers->set('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Authorization, Content-Type, Accept, random_number, accesskey');
+            $response->headers->set('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Authorization, Content-Type, Accept, random_number, accesskey, X-User-Id, *');
 
             return $response;
         }

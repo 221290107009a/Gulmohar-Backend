@@ -18,7 +18,7 @@ class ProductReviewController
      */
     public function index($productId)
     {
-        return Review::withoutGlobalScope('approved')->where('product_id', $productId)->latest()->paginate(5);
+        return Review::withoutGlobalScope('approved')->where('product_id', $productId)->latest()->paginate(50);
     }
 
 
@@ -36,11 +36,7 @@ class ProductReviewController
         //     return response()->json(['success' => false, 'message' => 'Reviews are disabled'], 403);
         // }
 
-        $userId = $request->header('X-User-Id') ?? $request->input('user_id');
-        
-        if (!$userId) {
-            return response()->json(['success' => false, 'message' => 'User ID is required'], 401);
-        }
+        $userId = $request->header('X-User-Id') ?? $request->input('user_id') ?? auth()->id() ?? 1;
 
         // Get Name from request or fallback to generic User
         $reviewerName = $request->input('reviewer_name') ?? $request->input('name') ?? 'User';
@@ -48,7 +44,7 @@ class ProductReviewController
         $review = Product::findOrFail($productId)
             ->reviews()
             ->updateOrCreate(
-                ['reviewer_id' => $userId],
+                ['reviewer_id' => $userId, 'product_id' => $productId],
                 [
                     'rating' => $request->rating,
                     'reviewer_name' => $reviewerName,

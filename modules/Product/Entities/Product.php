@@ -249,6 +249,7 @@ class Product extends Model implements Sitemapable
             ->withName()
             ->withBaseImage()
             ->withPrice()
+            ->with('categories')
             ->addSelect(['id', 'is_active', 'created_at', 'updated_at'])
             ->when($request->has('except'), function ($query) use ($request) {
                 $query->whereNotIn('id', explode(',', $request->except));
